@@ -3,8 +3,6 @@
 #include <vector>
 #include <filesystem>
 #include <opencv2/opencv.hpp>
-#include <tesseract/baseapi.h>
-#include <leptonica/allheaders.h>
 
 namespace fs = std::filesystem;
 
@@ -70,26 +68,6 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     cv::Mat plate = desk(plateRect);
-    cv::Mat grayPlate;
-    cv::cvtColor(plate, grayPlate, cv::COLOR_BGR2GRAY);
-    cv::Mat thr;
-    cv::threshold(grayPlate, thr, 0, 255, cv::THRESH_BINARY | cv::THRESH_OTSU);
-    cv::Mat thr2;
-    cv::morphologyEx(thr, thr2, cv::MORPH_CLOSE, cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3)));
-    cv::Mat ocrImage;
-    cv::resize(thr2, ocrImage, cv::Size(), 2, 2, cv::INTER_CUBIC);
-
-    tesseract::TessBaseAPI ocr;
-    if (ocr.Init(nullptr, "eng", tesseract::OEM_LSTM_ONLY)) {
-        std::cerr << "Erro ao inicializar Tesseract" << std::endl;
-        return 1;
-    }
-    ocr.SetPageSegMode(tesseract::PSM_SINGLE_LINE);
-    ocr.SetImage(ocrImage.data, ocrImage.cols, ocrImage.rows, ocrImage.channels(), ocrImage.step);
-    char* outText = ocr.GetUTF8Text();
-    std::string plateText = outText ? outText : std::string();
-    delete[] outText;
-    ocr.End();
 
     fs::path outputPath = inputPath.stem().string() + "_placa" + inputPath.extension().string();
     if (!cv::imwrite(outputPath.string(), plate)) {
@@ -97,6 +75,5 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     std::cout << outputPath.string() << std::endl;
-    std::cout << plateText << std::endl;
     return 0;
 }
