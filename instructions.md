@@ -14,7 +14,8 @@ https://felix.abecassis.me/2011/10/opencv-rotation-deskewing/
 
 ## Instruções de compilação
 
-É necessário ter o OpenCV instalado.
+É necessário ter o OpenCV, o Tesseract OCR (libtesseract-dev) e o Leptonica (libleptonica-dev) instalados.
+É necessário também ter o pkg-config para descobrir as bibliotecas.
 
 ```bash
 mkdir build && cd build

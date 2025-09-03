@@ -1,105 +1,102 @@
-#include <opencv2/opencv.hpp>
 #include <iostream>
-#include <vector>
 #include <string>
-#include <algorithm>
-#include <cmath>
+#include <vector>
+#include <filesystem>
+#include <opencv2/opencv.hpp>
+#include <tesseract/baseapi.h>
+#include <leptonica/allheaders.h>
 
-int main(int argc, char** argv) {
-    if (argc != 2) {
-        std::cerr << "Uso: " << argv[0] << " <caminho_imagem>" << std::endl;
-        return 1;
-    }
-    std::string inputPath = argv[1];
-    cv::Mat image = cv::imread(inputPath);
-    if (image.empty()) {
-        std::cerr << "Erro ao carregar imagem: " << inputPath << std::endl;
-        return 1;
-    }
+namespace fs = std::filesystem;
 
-    // Pré-processamento para detecção de bordas
+static cv::Mat deskew(const cv::Mat& src) {
     cv::Mat gray;
-    cv::cvtColor(image, gray, cv::COLOR_BGR2GRAY);
-    cv::Mat denoised;
-    cv::bilateralFilter(gray, denoised, 11, 17, 17);
-    cv::Mat edged;
-    cv::Canny(denoised, edged, 30, 200);
+    if (src.channels() > 1)
+        cv::cvtColor(src, gray, cv::COLOR_BGR2GRAY);
+    else
+        gray = src;
+    cv::Mat bw;
+    cv::threshold(gray, bw, 0, 255, cv::THRESH_BINARY | cv::THRESH_OTSU);
+    std::vector<cv::Point> pts;
+    cv::findNonZero(bw, pts);
+    cv::RotatedRect box = cv::minAreaRect(pts);
+    double angle = box.angle;
+    if (angle < -45)
+        angle += 90;
+    cv::Mat rot = cv::getRotationMatrix2D(box.center, angle, 1);
+    cv::Mat dst;
+    cv::warpAffine(src, dst, rot, src.size(), cv::INTER_CUBIC);
+    return dst;
+}
 
-    // Encontrar contornos
+static cv::Rect findPlate(const cv::Mat& src) {
+    cv::Mat gray;
+    cv::cvtColor(src, gray, cv::COLOR_BGR2GRAY);
+    cv::Mat filtered;
+    cv::bilateralFilter(gray, filtered, 11, 17, 17);
+    cv::Mat edged;
+    cv::Canny(filtered, edged, 30, 200);
     std::vector<std::vector<cv::Point>> contours;
     cv::findContours(edged, contours, cv::RETR_LIST, cv::CHAIN_APPROX_SIMPLE);
-    std::vector<cv::Point> bestContour;
-    double maxArea = 0;
-    for (auto& contour : contours) {
-        double peri = cv::arcLength(contour, true);
-        std::vector<cv::Point> approx;
-        cv::approxPolyDP(contour, approx, 0.018 * peri, true);
-        if (approx.size() == 4) {
-            double area = cv::contourArea(approx);
-            if (area > maxArea) {
-                maxArea = area;
-                bestContour = approx;
-            }
+    cv::Rect best;
+    double bestArea = 0;
+    for (const auto& c : contours) {
+        cv::RotatedRect rr = cv::minAreaRect(c);
+        cv::Size2f sz = rr.size;
+        double area = sz.width * sz.height;
+        double ratio = sz.width > sz.height ? sz.width / sz.height : sz.height / sz.width;
+        if (ratio > 2 && ratio < 6 && area > bestArea) {
+            bestArea = area;
+            best = rr.boundingRect() & cv::Rect(0, 0, src.cols, src.rows);
         }
     }
-    if (bestContour.empty()) {
-        std::cerr << "Placa não encontrada." << std::endl;
+    return best;
+}
+
+int main(int argc, char* argv[]) {
+    if (argc != 2) {
+        std::cerr << "Uso: " << argv[0] << " <imagem>" << std::endl;
         return 1;
     }
-
-    // Extrair a região da placa via perspectiva para alinhar corretamente
-    std::vector<cv::Point2f> pts;
-    for (auto& p : bestContour) pts.emplace_back(static_cast<float>(p.x), static_cast<float>(p.y));
-    std::vector<cv::Point2f> rect(4);
-    auto sumCmp = [](const cv::Point2f& a, const cv::Point2f& b) { return a.x + a.y < b.x + b.y; };
-    auto diffCmp = [](const cv::Point2f& a, const cv::Point2f& b) { return a.x - a.y < b.x - b.y; };
-    rect[0] = *std::min_element(pts.begin(), pts.end(), sumCmp);
-    rect[2] = *std::max_element(pts.begin(), pts.end(), sumCmp);
-    rect[1] = *std::min_element(pts.begin(), pts.end(), diffCmp);
-    rect[3] = *std::max_element(pts.begin(), pts.end(), diffCmp);
-    float widthA = std::hypot(rect[2].x - rect[3].x, rect[2].y - rect[3].y);
-    float widthB = std::hypot(rect[1].x - rect[0].x, rect[1].y - rect[0].y);
-    float maxWidth = std::max(widthA, widthB);
-    float heightA = std::hypot(rect[1].x - rect[2].x, rect[1].y - rect[2].y);
-    float heightB = std::hypot(rect[0].x - rect[3].x, rect[0].y - rect[3].y);
-    float maxHeight = std::max(heightA, heightB);
-    std::vector<cv::Point2f> dst = {{0, 0}, {maxWidth - 1, 0}, {maxWidth - 1, maxHeight - 1}, {0, maxHeight - 1}};
-    cv::Mat plate;
-    if (maxWidth < 1.f || maxHeight < 1.f) {
-        // fallback para boundingRect caso perspectiva gere dimensões inválidas
-        plate = image(cv::boundingRect(bestContour)).clone();
-    } else {
-        cv::Mat M = cv::getPerspectiveTransform(rect, dst);
-        cv::warpPerspective(image, plate, M, cv::Size((int)maxWidth, (int)maxHeight));
+    fs::path inputPath = argv[1];
+    cv::Mat image = cv::imread(inputPath.string());
+    if (image.empty()) {
+        std::cerr << "Erro ao abrir imagem: " << inputPath << std::endl;
+        return 1;
     }
+    cv::Mat desk = deskew(image);
+    cv::Rect plateRect = findPlate(desk);
+    if (plateRect.area() == 0) {
+        std::cerr << "Placa nao encontrada" << std::endl;
+        return 1;
+    }
+    cv::Mat plate = desk(plateRect);
+    cv::Mat grayPlate;
+    cv::cvtColor(plate, grayPlate, cv::COLOR_BGR2GRAY);
+    cv::Mat thr;
+    cv::threshold(grayPlate, thr, 0, 255, cv::THRESH_BINARY | cv::THRESH_OTSU);
+    cv::Mat thr2;
+    cv::morphologyEx(thr, thr2, cv::MORPH_CLOSE, cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3)));
+    cv::Mat ocrImage;
+    cv::resize(thr2, ocrImage, cv::Size(), 2, 2, cv::INTER_CUBIC);
 
-    // Melhoria da qualidade para OCR seguindo recomendações do Tesseract
-    cv::Mat plateGray;
-    cv::cvtColor(plate, plateGray, cv::COLOR_BGR2GRAY);
-    cv::Ptr<cv::CLAHE> clahe = cv::createCLAHE();
-    clahe->setClipLimit(2.0);
-    cv::Mat equalized;
-    clahe->apply(plateGray, equalized);
-    cv::Mat thresh;
-    cv::threshold(equalized, thresh, 0, 255, cv::THRESH_BINARY | cv::THRESH_OTSU);
-    cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3));
-    cv::Mat processed;
-    // Remoção de ruídos e fechamento de caracteres
-    cv::Mat opened, closed;
-    cv::morphologyEx(thresh, opened, cv::MORPH_OPEN, kernel);
-    cv::morphologyEx(opened, closed, cv::MORPH_CLOSE, kernel);
-    // Redimensionar para melhorar legibilidade de caracteres conforme recomendações do Tesseract
-    cv::resize(closed, processed, cv::Size(), 2.0, 2.0, cv::INTER_LINEAR);
+    tesseract::TessBaseAPI ocr;
+    if (ocr.Init(nullptr, "eng", tesseract::OEM_LSTM_ONLY)) {
+        std::cerr << "Erro ao inicializar Tesseract" << std::endl;
+        return 1;
+    }
+    ocr.SetPageSegMode(tesseract::PSM_SINGLE_LINE);
+    ocr.SetImage(ocrImage.data, ocrImage.cols, ocrImage.rows, ocrImage.channels(), ocrImage.step);
+    char* outText = ocr.GetUTF8Text();
+    std::string plateText = outText ? outText : std::string();
+    delete[] outText;
+    ocr.End();
 
-    // Gerar nome de saída: nome base + _placa + extensão
-    auto dotPos = inputPath.find_last_of('.');
-    std::string base = (dotPos == std::string::npos) ? inputPath : inputPath.substr(0, dotPos);
-    std::string ext = (dotPos == std::string::npos) ? "" : inputPath.substr(dotPos);
-    std::string outputPath = base + "_placa" + ext;
-    if (!cv::imwrite(outputPath, processed)) {
+    fs::path outputPath = inputPath.stem().string() + "_placa" + inputPath.extension().string();
+    if (!cv::imwrite(outputPath.string(), plate)) {
         std::cerr << "Erro ao salvar imagem: " << outputPath << std::endl;
         return 1;
     }
-    std::cout << "Imagem da placa salva em: " << outputPath << std::endl;
+    std::cout << outputPath.string() << std::endl;
+    std::cout << plateText << std::endl;
     return 0;
 }
