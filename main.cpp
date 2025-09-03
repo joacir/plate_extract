@@ -52,7 +52,7 @@ int main(int argc, char** argv) {
     for (auto& p : bestContour) pts.emplace_back(static_cast<float>(p.x), static_cast<float>(p.y));
     std::vector<cv::Point2f> rect(4);
     auto sumCmp = [](const cv::Point2f& a, const cv::Point2f& b) { return a.x + a.y < b.x + b.y; };
-    auto diffCmp = [](const cv::Point2f& a, const cv::Point2f& b) { return a.y - a.x < b.y - b.x; };
+    auto diffCmp = [](const cv::Point2f& a, const cv::Point2f& b) { return a.x - a.y < b.x - b.y; };
     rect[0] = *std::min_element(pts.begin(), pts.end(), sumCmp);
     rect[2] = *std::max_element(pts.begin(), pts.end(), sumCmp);
     rect[1] = *std::min_element(pts.begin(), pts.end(), diffCmp);
@@ -64,9 +64,14 @@ int main(int argc, char** argv) {
     float heightB = std::hypot(rect[0].x - rect[3].x, rect[0].y - rect[3].y);
     float maxHeight = std::max(heightA, heightB);
     std::vector<cv::Point2f> dst = {{0, 0}, {maxWidth - 1, 0}, {maxWidth - 1, maxHeight - 1}, {0, maxHeight - 1}};
-    cv::Mat M = cv::getPerspectiveTransform(rect, dst);
     cv::Mat plate;
-    cv::warpPerspective(image, plate, M, cv::Size(static_cast<int>(maxWidth), static_cast<int>(maxHeight)));
+    if (maxWidth < 1.f || maxHeight < 1.f) {
+        // fallback para boundingRect caso perspectiva gere dimensões inválidas
+        plate = image(cv::boundingRect(bestContour)).clone();
+    } else {
+        cv::Mat M = cv::getPerspectiveTransform(rect, dst);
+        cv::warpPerspective(image, plate, M, cv::Size((int)maxWidth, (int)maxHeight));
+    }
 
     // Melhoria da qualidade para OCR seguindo recomendações do Tesseract
     cv::Mat plateGray;
