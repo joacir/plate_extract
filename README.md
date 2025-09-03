@@ -9,6 +9,10 @@ This Python script demonstrates an Automatic Number Plate Recognition (ANPR) sys
 - **imutils**: A package providing convenience functions to make basic image processing functions such as resizing, rotating, and displaying images easier with OpenCV.
 - **pytesseract**: A Python wrapper for Google's Tesseract-OCR Engine. It allows for easy integration of OCR capabilities into Python applications.
 - **Pandas**: A powerful data manipulation and analysis library. Here it's used to store the recognized text and current timestamp into a CSV file.
+- **System Libraries**: On Linux, ensure that the OpenGL shared object (libGL.so.1) is installed. For example, on Ubuntu/Debian:
+  ```bash
+  sudo apt-get update && sudo apt-get install -y libgl1-mesa-glx
+  ```
 
 ### Functionality:
 
@@ -33,10 +37,13 @@ This Python script demonstrates an Automatic Number Plate Recognition (ANPR) sys
    - Configure Tesseract OCR.
    - Run OCR on the extracted number plate region to recognize the text.
 
-6. **Data Storage**:
+6. **OCR Output Cleaning**:
+   - Apply a regular expression to retain only alphanumeric characters (letters and digits), removing any other characters and whitespace.
+
+7. **Data Storage**:
    - Store the recognized text along with the current timestamp in a Pandas DataFrame.
 
-7. **Output**:
+8. **Output**:
    - Display the final image with the extracted number plate region.
    - Print the recognized text.
    - Save the DataFrame to a CSV file named 'data.csv'.
