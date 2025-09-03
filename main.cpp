@@ -2,6 +2,7 @@
 #include <iostream>
 #include <vector>
 #include <string>
+#include <algorithm>
 #include <cmath>
 
 int main(int argc, char** argv) {
@@ -46,24 +47,30 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // Extrair a região da placa
-    cv::Rect plateRect = cv::boundingRect(bestContour);
-    cv::Mat plate = image(plateRect).clone();
+    // Extrair a região da placa via perspectiva para alinhar corretamente
+    std::vector<cv::Point2f> pts;
+    for (auto& p : bestContour) pts.emplace_back(static_cast<float>(p.x), static_cast<float>(p.y));
+    std::vector<cv::Point2f> rect(4);
+    auto sumCmp = [](const cv::Point2f& a, const cv::Point2f& b) { return a.x + a.y < b.x + b.y; };
+    auto diffCmp = [](const cv::Point2f& a, const cv::Point2f& b) { return a.y - a.x < b.y - b.x; };
+    rect[0] = *std::min_element(pts.begin(), pts.end(), sumCmp);
+    rect[2] = *std::max_element(pts.begin(), pts.end(), sumCmp);
+    rect[1] = *std::min_element(pts.begin(), pts.end(), diffCmp);
+    rect[3] = *std::max_element(pts.begin(), pts.end(), diffCmp);
+    float widthA = std::hypot(rect[2].x - rect[3].x, rect[2].y - rect[3].y);
+    float widthB = std::hypot(rect[1].x - rect[0].x, rect[1].y - rect[0].y);
+    float maxWidth = std::max(widthA, widthB);
+    float heightA = std::hypot(rect[1].x - rect[2].x, rect[1].y - rect[2].y);
+    float heightB = std::hypot(rect[0].x - rect[3].x, rect[0].y - rect[3].y);
+    float maxHeight = std::max(heightA, heightB);
+    std::vector<cv::Point2f> dst = {{0, 0}, {maxWidth - 1, 0}, {maxWidth - 1, maxHeight - 1}, {0, maxHeight - 1}};
+    cv::Mat M = cv::getPerspectiveTransform(rect, dst);
+    cv::Mat plate;
+    cv::warpPerspective(image, plate, M, cv::Size(static_cast<int>(maxWidth), static_cast<int>(maxHeight)));
 
     // Melhoria da qualidade para OCR seguindo recomendações do Tesseract
     cv::Mat plateGray;
     cv::cvtColor(plate, plateGray, cv::COLOR_BGR2GRAY);
-    // Correção de inclinação (deskew) conforme recomendações de alinhamento
-    {
-        cv::Moments m = cv::moments(plateGray);
-        if (std::abs(m.mu02) > 1e-2) {
-            double skew = m.mu11 / m.mu02;
-            cv::Mat warpMat = (cv::Mat_<double>(2, 3) << 1, skew, -0.5 * plateGray.rows * skew,
-                                0, 1, 0);
-            cv::warpAffine(plateGray, plateGray, warpMat, plateGray.size(),
-                           cv::WARP_INVERSE_MAP | cv::INTER_LINEAR);
-        }
-    }
     cv::Ptr<cv::CLAHE> clahe = cv::createCLAHE();
     clahe->setClipLimit(2.0);
     cv::Mat equalized;
