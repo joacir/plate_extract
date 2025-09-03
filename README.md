@@ -43,11 +43,14 @@ This Python script demonstrates an Automatic Number Plate Recognition (ANPR) sys
 
 ### How to Use:
 
-1. Make sure you have Python installed on your system along with the necessary libraries: OpenCV, NumPy, imutils, pytesseract, and Pandas.
-2. Clone the repository or download the script 'code_M1.py'.
-3. Place an image named 'car_2.jpg' (or others) in the same directory as the script.
-4. Run the script using `python code_M1.py`.
-5. The recognized number plate text will be printed in the console, and the extracted number plate region will be displayed.
+1. Make sure you have Python 3 installed along with the necessary libraries: OpenCV, NumPy, imutils, pytesseract, and pandas.
+2. Clone the repository or download the `plate_extract.py` script.
+3. Run the script by passing the image as an argument:
+   ```bash
+   python plate_extract.py -i path/to/image.jpg
+   ```
+4. (Optional) Use `--psm`, `--oem`, `--lang`, `-o` and `--no-display` to adjust OCR settings, output CSV file, and display mode.
+5. The recognized plate text will be printed to the console, and the CSV file will be saved as specified by the `-o` parameter (default: data.csv).
 
 ### Note:
 
