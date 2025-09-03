@@ -12,6 +12,7 @@ import imutils
 import numpy as np
 import pandas as pd
 import pytesseract
+import re
 
 
 def main():
@@ -86,10 +87,12 @@ def main():
 
     config = f"-l {args.lang} --oem {args.oem} --psm {args.psm}"
     text = pytesseract.image_to_string(plate_img, config=config)
+    # Clean OCR output: keep only alphanumeric characters (letters and digits)
+    text = re.sub(r'[^A-Za-z0-9]', '', text)
 
     raw_data = {
         "date": [time.asctime(time.localtime(time.time()))],
-        "v_number": [text.strip()],
+        "v_number": [text],
     }
     df = pd.DataFrame(raw_data, columns=["date", "v_number"])
     df.to_csv(args.output, index=False)
